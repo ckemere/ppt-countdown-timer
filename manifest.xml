@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:type="ContentApp">
+  <Id>f6bfb620-3690-4a29-8ac5-882ac6afe45d</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Caleb Kemere</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Countdown Timer"/>
+  <Description DefaultValue="A giant countdown timer you can place on any slide."/>
+  <IconUrl DefaultValue="https://ckemere.github.io/ppt-countdown-timer/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://ckemere.github.io/ppt-countdown-timer/icon-64.png"/>
+  <SupportUrl DefaultValue="https://github.com/ckemere/ppt-countdown-timer"/>
+  <AppDomains>
+    <AppDomain>https://ckemere.github.io</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Presentation"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://ckemere.github.io/ppt-countdown-timer/index.html"/>
+    <RequestedWidth>800</RequestedWidth>
+    <RequestedHeight>400</RequestedHeight>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <AllowSnapshot>true</AllowSnapshot>
+</OfficeApp>

@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Countdown Timer</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  :root {
+    --fg: #111111;
+    --bg: #ffffff;
+    --warn: #d4a017;
+    --done: #d62828;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  #face {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  #digits {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+    letter-spacing: -0.02em;
+  }
+  body.warn #digits { color: var(--warn); }
+  body.done #digits { color: var(--done); }
+  body.done.flash #digits { animation: flash 1s steps(2, start) infinite; }
+  @keyframes flash { to { visibility: hidden; } }
+
+  /* Hover controls */
+  #controls {
+    position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+    display: flex; gap: 6px; padding: 5px;
+    background: rgba(0,0,0,.65); border-radius: 10px;
+    opacity: 0; transition: opacity .2s;
+  }
+  body:hover #controls, #controls:focus-within { opacity: 1; }
+  #controls button {
+    font: 600 13px/1 inherit; font-family: inherit;
+    color: #fff; background: rgba(255,255,255,.15);
+    border: 0; border-radius: 6px; padding: 7px 10px; cursor: pointer;
+    min-width: 34px;
+  }
+  #controls button:hover { background: rgba(255,255,255,.3); }
+
+  /* Settings panel */
+  #settings {
+    position: absolute; inset: 0; display: none;
+    background: #fff; color: #222; overflow: auto;
+    padding: 14px 16px; font-size: 13px;
+  }
+  body.editing #settings { display: block; }
+  body.editing #face, body.editing #controls { display: none; }
+  #settings h2 { margin: 0 0 10px; font-size: 15px; }
+  #settings .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  #settings label { min-width: 120px; }
+  #settings input[type=number] { width: 64px; padding: 4px; font-size: 13px; }
+  #settings input[type=color] { width: 40px; height: 26px; padding: 0; border: 1px solid #ccc; }
+  #settings .actions { margin-top: 14px; display: flex; gap: 8px; }
+  #settings .actions button { padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  #settings .hint { color: #666; font-size: 12px; margin-top: 12px; line-height: 1.4; }
+</style>
+</head>
+<body>
+  <div id="face" title="Click to start / pause">
+    <div id="digits">5:00</div>
+  </div>
+
+  <div id="controls">
+    <button id="btnToggle" title="Start / pause (Space)">▶</button>
+    <button id="btnReset" title="Reset (R)">↺</button>
+    <button id="btnMinus" title="Remove 1 minute">−1m</button>
+    <button id="btnPlus" title="Add 1 minute">+1m</button>
+    <button id="btnSettings" title="Settings">⚙</button>
+  </div>
+
+  <div id="settings">
+    <h2>Countdown settings</h2>
+    <div class="row">
+      <label>Duration</label>
+      <input id="setMin" type="number" min="0" max="999" step="1"> min
+      <input id="setSec" type="number" min="0" max="59" step="1"> sec
+    </div>
+    <div class="row">
+      <label>Warning at</label>
+      <input id="setWarn" type="number" min="0" max="9999" step="1"> sec remaining (0 = off)
+    </div>
+    <div class="row">
+      <label>Text color</label><input id="setFg" type="color">
+      <label style="min-width:auto">Background</label><input id="setBg" type="color">
+    </div>
+    <div class="row">
+      <label>Warning color</label><input id="setWarnColor" type="color">
+      <label style="min-width:auto">Time's up</label><input id="setDoneColor" type="color">
+    </div>
+    <div class="row">
+      <label><input id="setOvertime" type="checkbox"> Count up past zero (−0:15)</label>
+    </div>
+    <div class="row">
+      <label><input id="setFlash" type="checkbox"> Flash when time is up</label>
+    </div>
+    <div class="row">
+      <label><input id="setSound" type="checkbox"> Beep when time is up</label>
+    </div>
+    <div class="row">
+      <label><input id="setAutoStart" type="checkbox"> Auto-start when the slide show begins</label>
+    </div>
+    <div class="actions">
+      <button id="btnSave">Save</button>
+      <button id="btnCancel">Cancel</button>
+    </div>
+    <div class="hint">
+      Click the digits to start/pause. Hover for controls.<br>
+      Keyboard (after clicking the timer): Space = start/pause, R = reset, ↑/↓ = ±1 minute.<br>
+      Settings are saved with this presentation, per timer.
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var DEFAULTS = {
+    duration: 300, warnAt: 60,
+    fg: "#111111", bg: "#ffffff", warnColor: "#d4a017", doneColor: "#d62828",
+    overtime: true, flash: true, sound: false, autoStart: false
+  };
+  var KEY = "countdownSettings";
+
+  var cfg = Object.assign({}, DEFAULTS);
+  var remainingMs = cfg.duration * 1000;   // time left when paused
+  var endTime = null;                       // performance.now() deadline when running
+  var tickHandle = null;
+  var beeped = false;
+  var inOffice = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var digits = $("digits");
+
+  // ---------- persistence ----------
+  function loadSettings() {
+    var saved = null;
+    try {
+      if (inOffice) saved = Office.context.document.settings.get(KEY);
+      else saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    } catch (e) {}
+    if (saved && typeof saved === "object") cfg = Object.assign({}, DEFAULTS, saved);
+  }
+
+  function saveSettings() {
+    try {
+      if (inOffice) {
+        Office.context.document.settings.set(KEY, cfg);
+        Office.context.document.settings.saveAsync(function () {});
+      } else {
+        localStorage.setItem(KEY, JSON.stringify(cfg));
+      }
+    } catch (e) {}
+  }
+
+  // ---------- display ----------
+  function applyColors() {
+    var r = document.documentElement.style;
+    r.setProperty("--fg", cfg.fg);
+    r.setProperty("--bg", cfg.bg);
+    r.setProperty("--warn", cfg.warnColor);
+    r.setProperty("--done", cfg.doneColor);
+  }
+
+  function format(ms) {
+    var neg = ms < 0;
+    // Round up while counting down so "0:00" only appears at the true end.
+    var total = neg ? Math.floor(-ms / 1000) : Math.ceil(ms / 1000);
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    var ss = (s < 10 ? "0" : "") + s;
+    var str = h > 0 ? h + ":" + (m < 10 ? "0" : "") + m + ":" + ss : m + ":" + ss;
+    return (neg ? "−" : "") + str;
+  }
+
+  var lastLen = -1;
+  function fit() {
+    // Scale the digits to fill the frame, using a fixed-width template so
+    // the size doesn't jitter as digits change.
+    var text = digits.textContent;
+    var template = text.replace(/[0-9]/g, "0");
+    var saved = digits.textContent;
+    digits.style.fontSize = "100px";
+    digits.textContent = template;
+    var w = digits.scrollWidth, h = digits.offsetHeight;
+    digits.textContent = saved;
+    var W = window.innerWidth * 0.94, H = window.innerHeight * 0.92;
+    var size = Math.max(8, Math.min(100 * W / w, 100 * H / h));
+    digits.style.fontSize = size + "px";
+  }
+
+  function currentMs() {
+    return endTime === null ? remainingMs : endTime - performance.now();
+  }
+
+  function render() {
+    var ms = currentMs();
+    var running = endTime !== null;
+    if (!cfg.overtime && ms <= 0) {
+      ms = 0;
+      if (endTime !== null) { remainingMs = 0; endTime = null; stopTicking(); }
+    }
+    var text = format(ms);
+    if (digits.textContent !== text) {
+      digits.textContent = text;
+      if (text.length !== lastLen) { lastLen = text.length; fit(); }
+    }
+    var done = ms <= 0;
+    var warn = !done && cfg.warnAt > 0 && ms <= cfg.warnAt * 1000;
+    document.body.classList.toggle("done", done);
+    document.body.classList.toggle("warn", warn);
+    document.body.classList.toggle("flash", done && cfg.flash);
+    if (done && running && !beeped) { beeped = true; if (cfg.sound) beep(); }
+    $("btnToggle").textContent = endTime !== null ? "❚❚" : "▶";
+  }
+
+  // ---------- timer control ----------
+  function startTicking() {
+    if (!tickHandle) tickHandle = setInterval(render, 100);
+  }
+  function stopTicking() {
+    if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+  }
+  function start() {
+    if (endTime !== null) return;
+    if (remainingMs <= 0 && !cfg.overtime) return;
+    endTime = performance.now() + remainingMs;
+    startTicking(); render();
+  }
+  function pause() {
+    if (endTime === null) return;
+    remainingMs = endTime - performance.now();
+    endTime = null;
+    stopTicking(); render();
+  }
+  function toggle() { endTime === null ? start() : pause(); }
+  function reset() {
+    endTime = null; stopTicking();
+    remainingMs = cfg.duration * 1000;
+    beeped = false;
+    render();
+  }
+  function adjust(deltaSec) {
+    if (endTime !== null) endTime += deltaSec * 1000;
+    else remainingMs = Math.max(0, remainingMs + deltaSec * 1000);
+    if (currentMs() > 0) beeped = false;
+    render();
+  }
+
+  function beep() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      var ctx = new Ctx();
+      [0, 0.35, 0.7].forEach(function (t) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = 880; o.type = "sine";
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.25);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+      });
+    } catch (e) {}
+  }
+
+  // ---------- settings UI ----------
+  function openSettings() {
+    pause();
+    $("setMin").value = Math.floor(cfg.duration / 60);
+    $("setSec").value = cfg.duration % 60;
+    $("setWarn").value = cfg.warnAt;
+    $("setFg").value = cfg.fg;
+    $("setBg").value = cfg.bg;
+    $("setWarnColor").value = cfg.warnColor;
+    $("setDoneColor").value = cfg.doneColor;
+    $("setOvertime").checked = cfg.overtime;
+    $("setFlash").checked = cfg.flash;
+    $("setSound").checked = cfg.sound;
+    $("setAutoStart").checked = cfg.autoStart;
+    document.body.classList.add("editing");
+  }
+  function closeSettings(save) {
+    if (save) {
+      var m = Math.max(0, parseInt($("setMin").value, 10) || 0);
+      var s = Math.min(59, Math.max(0, parseInt($("setSec").value, 10) || 0));
+      cfg.duration = Math.max(1, m * 60 + s);
+      cfg.warnAt = Math.max(0, parseInt($("setWarn").value, 10) || 0);
+      cfg.fg = $("setFg").value;
+      cfg.bg = $("setBg").value;
+      cfg.warnColor = $("setWarnColor").value;
+      cfg.doneColor = $("setDoneColor").value;
+      cfg.overtime = $("setOvertime").checked;
+      cfg.flash = $("setFlash").checked;
+      cfg.sound = $("setSound").checked;
+      cfg.autoStart = $("setAutoStart").checked;
+      saveSettings();
+      applyColors();
+      reset();
+    }
+    document.body.classList.remove("editing");
+    lastLen = -1; render();
+  }
+
+  // ---------- wiring ----------
+  function stop(e) { e.stopPropagation(); }
+  $("face").addEventListener("click", toggle);
+  $("btnToggle").addEventListener("click", function (e) { stop(e); toggle(); });
+  $("btnReset").addEventListener("click", function (e) { stop(e); reset(); });
+  $("btnPlus").addEventListener("click", function (e) { stop(e); adjust(60); });
+  $("btnMinus").addEventListener("click", function (e) { stop(e); adjust(-60); });
+  $("btnSettings").addEventListener("click", function (e) { stop(e); openSettings(); });
+  $("btnSave").addEventListener("click", function () { closeSettings(true); });
+  $("btnCancel").addEventListener("click", function () { closeSettings(false); });
+
+  document.addEventListener("keydown", function (e) {
+    if (document.body.classList.contains("editing")) {
+      if (e.key === "Enter") closeSettings(true);
+      if (e.key === "Escape") closeSettings(false);
+      return;
+    }
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); }
+    else if (e.key === "r" || e.key === "R") reset();
+    else if (e.key === "ArrowUp") adjust(60);
+    else if (e.key === "ArrowDown") adjust(-60);
+  });
+
+  window.addEventListener("resize", function () { fit(); });
+
+  function init() {
+    loadSettings();
+    applyColors();
+    reset();
+    lastLen = -1; render();
+
+    if (inOffice && Office.context.document.addHandlerAsync) {
+      // "read" view = slide show. Reset (and optionally start) when the show begins.
+      try {
+        Office.context.document.addHandlerAsync(Office.EventType.ActiveViewChanged, function (args) {
+          if (args.activeView === "read") {
+            reset();
+            if (cfg.autoStart) start();
+          }
+        });
+        Office.context.document.getActiveViewAsync(function (r) {
+          if (r.status === "succeeded" && r.value === "read" && cfg.autoStart) start();
+        });
+      } catch (e) {}
+    }
+  }
+
+  if (window.Office && Office.onReady) {
+    Office.onReady(function (info) {
+      inOffice = !!(info && info.host);
+      init();
+    });
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>
