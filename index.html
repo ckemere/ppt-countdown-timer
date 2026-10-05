@@ -131,7 +131,8 @@
       <button id="btnCancel">Cancel</button>
     </div>
     <div class="hint">
-      Click the digits to start/pause. Hover for controls.<br>
+      In a slide show the timer starts automatically (clicks there advance the slide on Mac).<br>
+      While editing: click the digits to start/pause, hover for controls.<br>
       Keyboard (after clicking the timer): Space = start/pause, R = reset, ↑/↓ = ±1 minute.<br>
       Settings are saved with this presentation, per timer.
     </div>
@@ -144,7 +145,7 @@
   var DEFAULTS = {
     duration: 300, warnAt: 60,
     fg: "#111111", bg: "#ffffff", warnColor: "#d4a017", doneColor: "#d62828",
-    overtime: true, flash: true, sound: false, autoStart: false, diag: false
+    overtime: true, flash: true, sound: false, autoStart: true, diag: false
   };
   var KEY = "countdownSettings";
 

@@ -2,7 +2,7 @@
 
 A content add-in that puts a giant, auto-scaling countdown timer on a slide.
 
-- Click the digits to start/pause; hover to see controls (reset, ±1 min, settings).
+- In a slide show the timer starts by itself (on Mac, clicks there advance the slide instead of reaching the timer). While editing, click the digits to start/pause; hover to see controls (reset, ±1 min, settings).
 - Keyboard (after clicking the timer): Space = start/pause, R = reset, ↑/↓ = ±1 minute.
 - Settings (duration, colors, warning threshold, overtime, flash, beep, auto-start) are saved per timer in the presentation.
 
