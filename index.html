@@ -36,6 +36,13 @@
   body.done.flash #digits { animation: flash 1s steps(2, start) infinite; }
   @keyframes flash { to { visibility: hidden; } }
 
+  #diag {
+    position: absolute; top: 4px; left: 6px; display: none;
+    font: 11px/1.3 Menlo, monospace; color: #fff; background: rgba(0,0,0,.7);
+    padding: 3px 6px; border-radius: 4px; pointer-events: none; z-index: 5;
+  }
+  body.showdiag #diag { display: block; }
+
   /* Hover controls */
   #controls {
     position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
@@ -75,6 +82,8 @@
     <div id="digits">5:00</div>
   </div>
 
+  <div id="diag"></div>
+
   <div id="controls">
     <button id="btnToggle" title="Start / pause (Space)">▶</button>
     <button id="btnReset" title="Reset (R)">↺</button>
@@ -112,7 +121,10 @@
       <label><input id="setSound" type="checkbox"> Beep when time is up</label>
     </div>
     <div class="row">
-      <label><input id="setAutoStart" type="checkbox"> Auto-start when the slide show begins</label>
+      <label><input id="setAutoStart" type="checkbox"> Auto-start in slide show</label>
+    </div>
+    <div class="row">
+      <label><input id="setDiag" type="checkbox"> Show diagnostics</label>
     </div>
     <div class="actions">
       <button id="btnSave">Save</button>
@@ -132,7 +144,7 @@
   var DEFAULTS = {
     duration: 300, warnAt: 60,
     fg: "#111111", bg: "#ffffff", warnColor: "#d4a017", doneColor: "#d62828",
-    overtime: true, flash: true, sound: false, autoStart: false
+    overtime: true, flash: true, sound: false, autoStart: false, diag: false
   };
   var KEY = "countdownSettings";
 
@@ -142,6 +154,7 @@
   var tickHandle = null;
   var beeped = false;
   var inOffice = false;
+  var diag = { host: "-", view: "?", ticks: 0, clicks: 0, events: 0, loaded: new Date().toLocaleTimeString() };
 
   var $ = function (id) { return document.getElementById(id); };
   var digits = $("digits");
@@ -227,11 +240,18 @@
     document.body.classList.toggle("flash", done && cfg.flash);
     if (done && running && !beeped) { beeped = true; if (cfg.sound) beep(); }
     $("btnToggle").textContent = endTime !== null ? "❚❚" : "▶";
+    document.body.classList.toggle("showdiag", !!cfg.diag);
+    if (cfg.diag) {
+      $("diag").textContent = "host:" + diag.host + " view:" + diag.view +
+        " running:" + (endTime !== null) + " ticks:" + diag.ticks +
+        " clicks:" + diag.clicks + " viewEvts:" + diag.events +
+        " vis:" + document.visibilityState + " loaded:" + diag.loaded;
+    }
   }
 
   // ---------- timer control ----------
   function startTicking() {
-    if (!tickHandle) tickHandle = setInterval(render, 100);
+    if (!tickHandle) tickHandle = setInterval(function () { diag.ticks++; render(); }, 100);
   }
   function stopTicking() {
     if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
@@ -292,6 +312,7 @@
     $("setFlash").checked = cfg.flash;
     $("setSound").checked = cfg.sound;
     $("setAutoStart").checked = cfg.autoStart;
+    $("setDiag").checked = cfg.diag;
     document.body.classList.add("editing");
   }
   function closeSettings(save) {
@@ -308,6 +329,7 @@
       cfg.flash = $("setFlash").checked;
       cfg.sound = $("setSound").checked;
       cfg.autoStart = $("setAutoStart").checked;
+      cfg.diag = $("setDiag").checked;
       saveSettings();
       applyColors();
       reset();
@@ -318,7 +340,10 @@
 
   // ---------- wiring ----------
   function stop(e) { e.stopPropagation(); }
-  $("face").addEventListener("click", toggle);
+  $("face").addEventListener("click", function () { diag.clicks++; toggle(); });
+  // Some hosts swallow "click" but still deliver pointerdown; count both for diagnostics.
+  document.addEventListener("pointerdown", function () { diag.clicks++; render(); }, true);
+  document.addEventListener("visibilitychange", render);
   $("btnToggle").addEventListener("click", function (e) { stop(e); toggle(); });
   $("btnReset").addEventListener("click", function (e) { stop(e); reset(); });
   $("btnPlus").addEventListener("click", function (e) { stop(e); adjust(60); });
@@ -351,12 +376,15 @@
       // "read" view = slide show. Reset (and optionally start) when the show begins.
       try {
         Office.context.document.addHandlerAsync(Office.EventType.ActiveViewChanged, function (args) {
+          diag.events++; diag.view = args.activeView;
           if (args.activeView === "read") {
             reset();
             if (cfg.autoStart) start();
           }
         });
         Office.context.document.getActiveViewAsync(function (r) {
+          if (r.status === "succeeded") diag.view = r.value;
+          render();
           if (r.status === "succeeded" && r.value === "read" && cfg.autoStart) start();
         });
       } catch (e) {}
@@ -366,6 +394,7 @@
   if (window.Office && Office.onReady) {
     Office.onReady(function (info) {
       inOffice = !!(info && info.host);
+      diag.host = (info && info.host) || "none";
       init();
     });
   } else {
